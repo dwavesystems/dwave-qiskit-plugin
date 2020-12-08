@@ -1,0 +1,180 @@
+version: 2.1
+
+orbs:
+  win: circleci/windows@2.2.0
+
+jobs:
+  test-linux:
+    parameters:
+      python-image-version:
+        type: string
+
+    docker:
+      - image: circleci/python:<< parameters.python-image-version >>
+
+    steps:
+      - checkout
+
+      - restore_cache: &restore-cache-env
+          key: v1-dependencies-{{ checksum "requirements.txt" }}-{{ checksum "tests/requirements.txt" }}-{{ .Environment.CIRCLE_JOB }}
+
+      - run: &create-venv-install-deps
+          name: Create virtual environment and install dependencies
+          command: |
+            python -m venv env
+            . env/bin/activate
+            pip install -U pip setuptools wheel twine
+            pip install -r requirements.txt -r tests/requirements.txt
+
+      - save_cache: &save-cache-env
+          key: v1-dependencies-{{ checksum "requirements.txt" }}-{{ checksum "tests/requirements.txt" }}-{{ .Environment.CIRCLE_JOB }}
+          paths:
+            - env
+
+      - run: &run-tests
+          name: Run unittests
+          command: |
+            . env/bin/activate
+            coverage run -m unittest discover
+
+      - run: &run-codecov
+          name: Run codecov
+          command: |
+            . env/bin/activate
+            codecov
+
+  test-osx:
+    parameters:
+      python-version:
+        type: string
+
+    macos:
+      xcode: "12.2.0"
+
+    environment:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+
+    steps:
+      - checkout
+
+      - run:
+          name: Install pyenv
+          command: |
+            brew install pyenv
+
+      - restore_cache: &restore-cache-pyenv
+          key: v1-pyenv-{{ .Environment.CIRCLE_JOB }}-xcode-12.2.0
+
+      - run:
+          name: Install python
+          command: |
+            pyenv install << parameters.python-version>> -s
+
+      - run:
+          name: Set system python
+          command: |
+            pyenv global << parameters.python-version >>
+            echo 'eval "$(pyenv init -)"' >> ~/.bash_profile
+
+      - save_cache: &save-cache-pyenv
+          key: v1-pyenv-{{ .Environment.CIRCLE_JOB }}-xcode-12.2.0
+          paths:
+            - ~/.pyenv
+
+      - restore_cache: *restore-cache-env
+
+      - run: *create-venv-install-deps
+
+      - save_cache: *save-cache-env
+
+      - run: *run-tests
+
+      - run: *run-codecov
+
+  test-win:
+    parameters:
+      python-version:
+        type: string
+
+    executor:
+      name: win/default
+
+    steps:
+      - checkout
+
+      - run:
+          name: Install python and create virtualenv
+          command: |
+            nuget install python -Version << parameters.python-version >> -ExcludeVersion -OutputDirectory .
+            .\python\tools\python.exe --version
+            .\python\tools\python.exe -m pip install virtualenv
+            .\python\tools\python.exe -m virtualenv env
+
+      - run:
+          name: Install dependencies
+          command: |
+            env\Scripts\activate.ps1
+            python --version
+            pip install -U pip setuptools wheel twine
+            pip install -r requirements.txt
+            pip install -r tests\requirements.txt
+
+      - run:
+          name: Run unittests
+          command: |
+            env\Scripts\activate.ps1
+            coverage run -m unittest discover
+
+
+  deploy:
+    docker:
+      - image: circleci/python:3.7
+
+    steps:
+      - checkout
+
+      - run: *create-venv-install-deps
+
+      - run:
+          name: Verify version matches tag
+          command: |
+            . env/bin/activate
+            pip install .
+            [[ "$(pip show dwave-qiskit-plugin 2>/dev/null | grep Version)" == "Version: $CIRCLE_TAG" ]]
+
+      - run:
+          name: Build sdist and bdist
+          command: |
+            . env/bin/activate
+            python setup.py sdist bdist_wheel
+
+      - run:
+          name: Upload to PyPI
+          command: |
+            . env/bin/activate
+            twine upload -u $PYPI_USERNAME -p $PYPI_PASSWORD --skip-existing ./dist/*
+
+workflows:
+  test:
+    jobs:
+      - test-linux:
+          matrix:
+            parameters:
+              python-image-version: ["3.6", "3.7", "3.8"]
+      - test-osx:
+          matrix:
+            parameters:
+              python-version: ["3.6.8", "3.7.5", "3.8.6"]
+      - test-win:
+          matrix:
+            parameters:
+              python-version: ["3.6.8", "3.7.5", "3.8.6"]
+
+  deploy:
+    jobs:
+      - deploy:
+          filters:
+            tags:
+              only: /^[0-9]+(\.[0-9]+)*((\.dev|rc)([0-9]+)?)?$/
+            branches:
+              ignore: /.*/

@@ -1,0 +1,2 @@
+qiskit-aqua==0.8.1
+dwave-system==1.2.1

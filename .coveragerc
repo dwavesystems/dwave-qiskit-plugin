@@ -1,0 +1,12 @@
+[run]
+source = dwave.plugins.qiskit
+omit =
+    venv/*, env/*
+    tests/*, perf/*
+    dwave/plugins/qiskit/package_info.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+
