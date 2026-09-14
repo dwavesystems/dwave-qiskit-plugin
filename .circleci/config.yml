@@ -164,11 +164,15 @@ jobs:
 
       - run:
           name: Install build deps
-          command: env/bin/pip install build
+          command: env/bin/pip install build twine
 
       - run: &build-package
           name: Build package
           command: env/bin/python -m build
+
+      - run:
+          name: Check package
+          command: env/bin/twine check ./dist/*
 
       - store_artifacts:
           path: ./dist
