@@ -32,7 +32,7 @@ jobs:
           command: |
             python -m venv env
             . env/bin/activate
-            pip install -U pip setuptools wheel twine
+            pip install -U pip setuptools wheel twine build
             pip install --group dev --group test
 
       - save_cache: &save-cache-env
@@ -170,10 +170,10 @@ jobs:
             [[ "$(pip show dwave-qiskit-plugin 2>/dev/null | grep Version)" == "Version: $CIRCLE_TAG" ]]
 
       - run:
-          name: Build sdist and bdist
+          name: Build package
           command: |
             . env/bin/activate
-            python setup.py sdist bdist_wheel
+            python -m build
 
       - run:
           name: Upload to PyPI
